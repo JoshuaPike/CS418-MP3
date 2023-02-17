@@ -1,0 +1,206 @@
+<!DOCTYPE HTML> 
+<html lang="en"> 
+<head>
+<title>MP3 </title>
+<meta charset="utf-8"> 
+</head>
+
+    
+<script id="skybox-shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexNormalSky;
+    attribute vec3 aVertexPositionSky;
+   
+    uniform mat4 uMVMatrixSky;
+    uniform mat4 uPMatrix;
+    uniform mat3 uNMatrixSky;
+    
+    varying vec4 vColor;
+    varying vec3 v_worldPosition;
+
+    void main(void) {
+                
+    gl_Position = uPMatrix*uMVMatrixSky*vec4(aVertexPositionSky, 1.0);
+    
+    v_worldPosition = aVertexPositionSky;
+    
+    }
+</script>
+  
+<script id="skybox-shader-fs" type="x-shader/x-fragment">
+    precision mediump float;
+    varying vec4 vColor;
+
+    varying vec3 v_worldPosition;
+
+    // The cubemap
+    uniform samplerCube uSkyboxTexture;
+
+    void main(void) {
+            gl_FragColor = textureCube(uSkyboxTexture, normalize(v_worldPosition));
+
+        
+    }
+</script>
+
+<script id="teapot-shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexNormalTea;
+    attribute vec3 aVertexPositionTea;
+   
+    uniform mat4 uMVMatrixTea;
+    uniform mat4 uPMatrix;
+    uniform mat3 uNMatrixTea;
+    
+    varying vec3 normalInterp;
+    varying vec3 vertPos;
+    varying mat4 mvMat;
+    
+    // Reflective Vars
+    varying vec3 v_worldPosition;
+    varying vec3 v_worldNormal;
+
+    void main(void) {
+        gl_Position = uPMatrix*uMVMatrixTea*vec4(aVertexPositionTea, 1.0);
+    
+        mvMat = uMVMatrixTea;
+    
+        vec4 vertPos4 = uMVMatrixTea * vec4(aVertexPositionTea, 1.0);
+    
+        vertPos = vec3(vertPos4) / vertPos4.w;
+    
+        normalInterp = vec3(uNMatrixTea * aVertexNormalTea);
+        
+        v_worldPosition = vertPos;
+
+        v_worldNormal = mat3(uMVMatrixTea) * aVertexNormalTea;
+    
+    }
+</script>
+  
+<script id="teapot-shader-fs" type="x-shader/x-fragment">
+    precision mediump float;
+    
+    varying vec3 normalInterp;
+    varying vec3 vertPos;
+    varying mat4 mvMat;
+
+    // Light uniforms
+    uniform vec3 uLightPosition;
+    uniform vec3 uAmbientLightColor;
+    uniform vec3 uDiffuseLightColor;
+    uniform vec3 uSpecularLightColor;
+    
+    // Material uniforms
+    uniform vec3 uKAmbient;
+    uniform vec3 uKSpecular;
+    uniform float uShininess;
+    uniform vec3 uKDiffuse;
+    
+    // The cubemap
+    uniform samplerCube uSkyboxTexture;
+
+    // Reflective Vars
+    varying vec3 v_worldPosition;
+    varying vec3 v_worldNormal;
+    
+    // Camera position
+    uniform vec3 u_worldCameraPosition;
+
+    void main(void) {
+    if (uLightPosition.x == 1. && uLightPosition.y == 1. && uLightPosition.z == 1.) {
+        //regular shading case
+        vec4 lightPos4 = mvMat * vec4(uLightPosition, 1.0);
+    
+        vec3 lightPos = vec3(lightPos4) / lightPos4.w;
+        
+        // Calculate the vector (l) to the light source
+        vec3 vectorToLightSource = normalize(lightPos - vertPos);
+    
+        // Transform the normal (n) to eye coordinates
+        // vec3 normalEye = normalize(uNMatrix * aVertexNormal);
+        vec3 normalEye = normalize(normalInterp);
+    
+        // Calculate n dot l for diffuse lighting
+        float diffuseLightWeightning = max(dot(normalEye, 
+                                    vectorToLightSource), 0.0);
+                                       
+        // Calculate the reflection vector (r) that is needed for specular light
+        vec3 reflectionVector = normalize(reflect(-vectorToLightSource, 
+                                             normalEye));
+    
+        // The camera in eye coordinates is located in the origin and is pointing
+        // along the negative z-axis. Calculate viewVector (v) 
+        // in eye coordinates as:
+        // (0.0, 0.0, 0.0) - vertexPositionEye3
+        vec3 viewVectorEye = -normalize(vertPos);
+    
+        // Need N dot H for blinn-phong
+        // Calculate halfway vector (H)
+        vec3 halfwayVector = normalize(vectorToLightSource + viewVectorEye);
+    
+        float ndoth = max(dot(normalEye, halfwayVector), 0.0);
+
+        // Use ndoth instead of rdotv
+        // float specularLightWeightning = pow(rdotv, uShininess);
+        float specularLightWeightning = pow(ndoth, uShininess);
+
+        // Sum up all three reflection components and send to the fragment shader
+        // Changing the equation to equal fragColor instead of gl_fragColor for fog calcs
+        gl_FragColor = vec4(((uAmbientLightColor*uKAmbient)
+            + (uDiffuseLightColor*uKDiffuse) * diffuseLightWeightning
+            + ((uSpecularLightColor*uKSpecular) * specularLightWeightning)),1.0);
+    } else if (uLightPosition.x == 0. && uLightPosition.y == 0. && uLightPosition.z == 0.) {
+        // reflective case
+        
+        // For now have u_worldCameraPosition = eyePT hardcoded
+        //vec3 u_worldCameraPosition = vec3(0.0,0.0,2.5);
+        
+        vec3 worldNormal = normalize(v_worldNormal);
+        vec3 eyeToSurfaceDir = normalize(v_worldPosition - u_worldCameraPosition);
+        vec3 direction = reflect(eyeToSurfaceDir,worldNormal);
+        
+        gl_FragColor = textureCube(uSkyboxTexture, direction);
+    } else if (uLightPosition.x == 0.55 && uLightPosition.y == 0.55 && uLightPosition.z == 0.55) {
+    
+        // For now have u_worldCameraPosition = eyePT hardcoded
+        //vec3 u_worldCameraPosition = vec3(0.0,0.0,2.5);
+        
+        vec3 worldNormal = normalize(v_worldNormal);
+        vec3 eyeToSurfaceDir = normalize(v_worldPosition - u_worldCameraPosition);
+        
+        
+        
+        vec3 direction = refract(eyeToSurfaceDir, v_worldNormal, 0.5);
+        
+        vec4 refractColor = textureCube(uSkyboxTexture, direction);
+        refractColor = mix(refractColor, vec4(1.0, 1.0, 1.0, 1.0), 0.3);
+        
+        gl_FragColor = refractColor;
+    }
+     
+    }
+</script>
+
+<script src="gl-matrix-min.js"></script> 
+<script src="webgl-utils.js"></script> 
+<script src="Skybox.js"></script>
+<script src="Teapot.js"></script> 
+<script src="MP3.js"></script>   
+<body onload="startup();">
+ <canvas id="myGLCanvas" width="800" height="800"></canvas>
+    <form id="input_form">
+        <fieldset>
+            <legend>Rendering Parameters</legend>
+         <input type="radio" name="primitive" id="reflective" value="reflective"> Reflective
+         <input type="radio" name="primitive" id="shaded" id="polygon" value="shaded" checked> Shaded
+         <input type="radio" name="primitive" id="refractive" value="refractive" > Refractive  
+        </fieldset>
+        <fieldset>
+            <legend>Mesh Pose and Camera Position</legend>
+         <emph>Euler Y:</emph> <input type="number" id="eY" value="0"> Keys A and D <br><br>
+         <emph>Eye Z position:</emph> <input type="number" id="eZ" value="0" > Keys ArrowUp and ArrowDown <br><br>
+         <emph>Orbit Angle:</emph> <input type="number" id="theta" value="0" > Keys ArrowLeft and ArrowRight  
+        </fieldset>
+        </form>
+</body>
+
+</html>
